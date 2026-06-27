@@ -10,4 +10,8 @@ const healthRouter = Router();
 // GET /health
 healthRouter.get("/", healthController);
 
+healthRouter.get("/error", () => {
+  throw new Error("Test error middleware");
+});
+
 export default healthRouter;

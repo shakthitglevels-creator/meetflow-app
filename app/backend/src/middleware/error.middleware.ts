@@ -2,7 +2,7 @@
 // global imports -  express provides a special type of error middleware 
 
 // local import 
-import { NextFunction } from "express";
+import { NextFunction, Request, Response } from "express";
 import { sendError } from "../shared/response";
 
 
@@ -13,5 +13,13 @@ export const errorMiddleware = (
     res: Response,
     next: NextFunction
 ) => {
-    console.log
+    console.error(error);
+
+    return sendError(
+        res,
+        error.message || "Internal Server Error",
+        [],
+        500
+
+    )
 }

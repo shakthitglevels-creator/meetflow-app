@@ -7,6 +7,7 @@ import cors from "cors";
 // local imports
 import healthRouter from "./modules/health/health.routes";
 import { notFoundMiddleware } from "./middleware/not-found.middleware";
+import { errorMiddleware } from "./middleware/error.middleware";
 
 // create express application
 const app = express();
@@ -24,6 +25,7 @@ app.use("/health", healthRouter);
 
 // notfound - middleware
 app.use(notFoundMiddleware)
+app.use(errorMiddleware)
 
 
 // export app so server can start it
