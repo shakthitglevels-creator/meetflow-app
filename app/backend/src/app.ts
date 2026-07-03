@@ -8,6 +8,7 @@ import cors from "cors";
 import healthRouter from "./modules/health/health.routes";
 import { notFoundMiddleware } from "./middleware/not-found.middleware";
 import { errorMiddleware } from "./middleware/error.middleware";
+import authRouter from "./modules/auth/routes/auth.route";
 
 // create express application
 const app = express();
@@ -22,6 +23,8 @@ app.use(express.json());
 
 // final endpoint GET /health
 app.use("/health", healthRouter);
+
+app.use("/api/auth", authRouter);
 
 // notfound - middleware
 app.use(notFoundMiddleware)

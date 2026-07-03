@@ -7,6 +7,7 @@ import dns from "dns"
 import app from "./app";
 import { env } from "./config/env";
 import { connectDatabase } from "./config/database";
+import { connectRedis } from "./config/redis";
 
 // port issue solved by dns 
 dns.setServers(["8.8.8.8", "8.8.4.4"])
@@ -22,6 +23,9 @@ const bootstrap = async () => {
         
         // initialize database 
         await connectDatabase();
+
+        // initialize redis 
+        await connectRedis();
 
         // start HTTP server 
         const server = app.listen(env.PORT, () => {
