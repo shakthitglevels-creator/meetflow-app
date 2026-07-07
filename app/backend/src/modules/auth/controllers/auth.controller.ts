@@ -6,6 +6,7 @@ import {logoutService} from "../services/auth.service";
 import { sendOtpService } from "../services/auth.service"
 import { verifyOtpService } from "../services/auth.service"
 
+import { forgotPasswordService, resetPasswordService } from "../services/auth.service";
 // Handle POST /api/auth/register
 
 export const registerController = async (
@@ -149,3 +150,42 @@ export const verifyOtpController = async (
     next(error)
   }
 }
+export const forgotPasswordController = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { email } = req.body;
+
+    await forgotPasswordService(email);
+
+    return sendSuccess(
+      res,
+      "Password reset OTP sent successfully"
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+
+export const resetPasswordController = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    await resetPasswordService(email, otp, newPassword);
+
+    return sendSuccess(
+      res,
+      "Password reset successfully"
+    );
+  } catch (error) {
+    next(error);
+  }
+};
