@@ -9,6 +9,7 @@ import {
   createMeetingParticipant,
   findMeetingParticipant,
   markParticipantAsJoined,
+  markParticipantAsLeft,
 } from "../repositories/meeting-participant.repository";
 
 import { AppError } from "../../../shared/errors/app-error";
@@ -119,5 +120,48 @@ export const joinMeetingService = async (
   return {
     meeting,
     participant: existingParticipant,
+  };
+};
+
+export const leaveMeetingService = async (
+  meetingCode: string,
+  userId: string,
+) => {
+  const meeting = await findMeetingByCode(meetingCode);
+  if (!meeting) {
+    throw new AppError("Meeting not found", 404);
+  }
+
+  const participant = await findMeetingParticipant(
+    meeting._id.toString(),
+    userId,
+  );
+
+  if (!participant) {
+    throw new AppError("You have not joined this meeting", 404);
+  }
+
+  if (participant.status === "left") {
+    return {
+      meetingCode: meeting.meetingCode,
+      participantId: participant._id,
+      status: participant.status,
+      leftAt: participant.leftAt,
+    };
+  }
+
+  const updatedParticipant = await markParticipantAsLeft(
+    participant._id.toString(),
+  );
+
+  if (!updatedParticipant) {
+    throw new AppError("Unable to leave the meeting", 500);
+  }
+
+  return {
+    meetingCode: meeting.meetingCode,
+    participantId: updatedParticipant._id,
+    status: updatedParticipant.status,
+    leftAt: updatedParticipant.leftAt,
   };
 };

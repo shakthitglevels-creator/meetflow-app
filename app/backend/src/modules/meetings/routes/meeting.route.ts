@@ -5,7 +5,7 @@ import { createMeetingController } from "../controllers/meeting.controller";
 import { createMeetingSchema } from "../validators/create-meeting.validator";
 import { validateParams } from "../middleware/validate-params.middleware";
 import { joinMeetingParamsSchema } from "../validators/join-meeting.validator";
-import { joinMeetingController } from "../controllers/meeting.controller";
+import { joinMeetingController, leaveMeetingController } from "../controllers/meeting.controller";
 
 
 const meetingRouter = Router()
@@ -159,4 +159,77 @@ meetingRouter.post("/", authMiddleware, validate(createMeetingSchema), createMee
  */
 meetingRouter.post("/:meetingCode/join", authMiddleware, validateParams(joinMeetingParamsSchema),joinMeetingController);
 
+
+/**
+ * @openapi
+ * /api/meetings/{meetingCode}/leave:
+ *   post:
+ *     tags:
+ *       - Meetings
+ *     summary: Leave a meeting
+ *     description: Marks the authenticated participant as left without deleting their participation record.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: meetingCode
+ *         required: true
+ *         schema:
+ *           type: string
+ *           minLength: 6
+ *           maxLength: 6
+ *         example: 8XK29Q
+ *     responses:
+ *       200:
+ *         description: Meeting left successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Meeting left successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     meetingCode:
+ *                       type: string
+ *                       example: 8XK29Q
+ *                     participantId:
+ *                       type: string
+ *                     status:
+ *                       type: string
+ *                       example: left
+ *                       enum:
+ *                         - joined
+ *                         - left
+ *                     leftAt:
+ *                       type: string
+ *                       format: date-time
+ *       400:
+ *         description: Invalid meeting code format
+ *       401:
+ *         description: Missing, invalid, or expired access token
+ *       404:
+ *         description: Meeting or participant record not found
+ *       500:
+ *         description: Unable to update participant state
+ */
+meetingRouter.post(
+  "/:meetingCode/leave",
+  authMiddleware,
+  validateParams(joinMeetingParamsSchema),
+  leaveMeetingController
+);
+
+
+
 export default meetingRouter;
+
+
+
+

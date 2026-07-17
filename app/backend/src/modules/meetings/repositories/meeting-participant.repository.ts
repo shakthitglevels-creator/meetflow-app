@@ -45,3 +45,18 @@ export const markParticipantAsJoined = async (
   );
 };
 
+// Mark an existing participant as having left the meeting
+export const markParticipantAsLeft = async (
+  participantId: string
+) => {
+  return MeetingParticipant.findByIdAndUpdate(
+    participantId,
+    {
+      status: "left",
+      leftAt: new Date(),
+    },
+    {
+      new: true,
+    }
+  )
+}

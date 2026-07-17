@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { sendSuccess } from "../../../shared/response";
-import { createMeetingService, joinMeetingService } from "../services/meeting.service";
+import { createMeetingService, joinMeetingService, leaveMeetingService } from "../services/meeting.service";
 
 export const createMeetingController = async (
   req: Request,
@@ -57,3 +57,36 @@ export const joinMeetingController = async (
     next(error)
   }
 }
+
+
+
+// Handles leaving an existing meeting
+export const leaveMeetingController = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // Meeting code comes from the URL parameter
+    const meetingCode = Array.isArray(req.params.meetingCode)
+      ? req.params.meetingCode[0]
+      : req.params.meetingCode;
+
+    // Logged-in user comes from auth middleware
+    const userId = (req as any).user.userId;
+
+    // Service handles leave-meeting business rules
+    const result = await leaveMeetingService(
+      meetingCode,
+      userId
+    );
+
+    return sendSuccess(
+      res,
+      "Meeting left successfully",
+      result
+    );
+  } catch (error) {
+    next(error);
+  }
+};
