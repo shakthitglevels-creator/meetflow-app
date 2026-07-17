@@ -5,7 +5,7 @@ import { createMeetingController } from "../controllers/meeting.controller";
 import { createMeetingSchema } from "../validators/create-meeting.validator";
 import { validateParams } from "../middleware/validate-params.middleware";
 import { joinMeetingParamsSchema } from "../validators/join-meeting.validator";
-import { joinMeetingController, leaveMeetingController, getMeetingDetailsController } from "../controllers/meeting.controller";
+import { joinMeetingController, leaveMeetingController, getMeetingDetailsController, getMeetingParticipantsController } from "../controllers/meeting.controller";
 
 
 const meetingRouter = Router()
@@ -179,6 +179,92 @@ meetingRouter.get(
 
 
 
+
+/**
+ * @openapi
+ * /api/meetings/{meetingCode}/participants:
+ *   get:
+ *     tags:
+ *       - Meetings
+ *     summary: Get currently joined meeting participants
+ *     description: Returns all participants who are currently marked as joined, including their basic user details.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: meetingCode
+ *         required: true
+ *         description: Six-character public meeting code
+ *         schema:
+ *           type: string
+ *           minLength: 6
+ *           maxLength: 6
+ *         example: 8XK29Q
+ *     responses:
+ *       200:
+ *         description: Meeting participants fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Meeting participants fetched successfully
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       role:
+ *                         type: string
+ *                         enum:
+ *                           - host
+ *                           - participant
+ *                       status:
+ *                         type: string
+ *                         enum:
+ *                           - joined
+ *                           - left
+ *                         example: joined
+ *                       joinedAt:
+ *                         type: string
+ *                         format: date-time
+ *                       user:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                           name:
+ *                             type: string
+ *                             example: Shakthivel
+ *                           email:
+ *                             type: string
+ *                             format: email
+ *                             example: shakthi@example.com
+ *                           avatar:
+ *                             type: string
+ *                             nullable: true
+ *       400:
+ *         description: Invalid meeting code format
+ *       401:
+ *         description: Missing, invalid, or expired access token
+ *       404:
+ *         description: Meeting not found
+ */
+meetingRouter.get(
+  "/:meetingCode/participants",
+  authMiddleware,
+  validateParams(joinMeetingParamsSchema),
+  getMeetingParticipantsController
+);
+
+
 /**
  * @openapi
  * /api/meetings/{meetingCode}/join:
@@ -327,6 +413,8 @@ meetingRouter.post(
   validateParams(joinMeetingParamsSchema),
   leaveMeetingController
 );
+
+
 
 
 

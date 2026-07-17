@@ -10,7 +10,8 @@ import {
   findMeetingParticipant,
   markParticipantAsJoined,
   markParticipantAsLeft,
-  countJoinedParticipants
+  countJoinedParticipants,
+  findJoinedParticipants,
 } from "../repositories/meeting-participant.repository";
 
 import { AppError } from "../../../shared/errors/app-error";
@@ -52,28 +53,27 @@ export const createMeetingService = async (hostId: string, title?: string) => {
   };
 };
 
-// get meeting details 
+// get meeting details
 export const getMeetingDetailsService = async (meetingCode: string) => {
   const meeting = await findMeetingByCode(meetingCode);
 
   if (!meeting) {
-    throw new AppError("Meeting not found", 404)
+    throw new AppError("Meeting not found", 404);
   }
 
-    // Count only participants who are currently inside
+  // Count only participants who are currently inside
   const participantCount = await countJoinedParticipants(
-    meeting._id.toString()
+    meeting._id.toString(),
   );
 
   // Populated host data
   const host = meeting.hostId as any;
 
-    return {
+  return {
     id: meeting._id,
     title: meeting.title,
     meetingCode: meeting.meetingCode,
     status: meeting.status,
-
 
     host: {
       id: host._id,
@@ -88,7 +88,7 @@ export const getMeetingDetailsService = async (meetingCode: string) => {
     endedAt: meeting.endedAt,
     hostId: meeting.hostId,
   };
-}
+};
 
 // clean API-ready data
 const buildJoinMeetingResponse = (meeting: any, participant: any) => {
@@ -203,4 +203,34 @@ export const leaveMeetingService = async (
     status: updatedParticipant.status,
     leftAt: updatedParticipant.leftAt,
   };
+};
+
+export const getMeetingParticipantsService = async (meetingCode: string) => {
+  const meeting = await findMeetingByCode(meetingCode);
+
+  if (!meeting) {
+    throw new AppError("Meeting not found", 404);
+  }
+
+  const participants = await findJoinedParticipants(meeting._id.toString());
+
+  return participants.map((participant: any) => ({
+    id: participant._id,
+
+    role: participant.role,
+
+    status: participant.status,
+
+    joinedAt: participant.joinedAt,
+
+    user: {
+      id: participant.userId._id,
+
+      name: participant.userId.name,
+
+      avatar: participant.userId.avatar,
+
+      email: participant.userId.email,
+    },
+  }));
 };

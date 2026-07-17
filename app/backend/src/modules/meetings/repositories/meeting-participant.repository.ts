@@ -69,3 +69,22 @@ export const countJoinedParticipants = async (meetingId: string) => {
     status: "joined",
   })
 }
+
+
+
+// Find currently joined participants and include basic user details
+export const findJoinedParticipants = async (
+  meetingId: string
+) => {
+  return MeetingParticipant.find({
+    meetingId: new Types.ObjectId(meetingId),
+    status: "joined",
+  })
+    .populate(
+      "userId",
+      "name email avatar"
+    )
+    .sort({
+      joinedAt: 1,
+    });
+};  
