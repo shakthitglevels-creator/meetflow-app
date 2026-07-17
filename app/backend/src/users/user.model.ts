@@ -7,11 +7,16 @@ import { Schema, Document } from "mongoose";
 // Allowed user roles in meetflow
 export type UserRole = "user" | "admin";
 
+// Allowed auth provider 
+export type AuthProvider = "local" | "google"
+
 // typescript shape of a user document
 export interface IUser extends Document {
   name: string;
   email: string;
-  password: string;
+  password?: string;
+  authProvider: AuthProvider;
+  googleId?: string;
   avatar?: string;
   role: UserRole;
   isEmailVerified: boolean;
@@ -43,8 +48,25 @@ const userSchema = new Schema<IUser>({
   // Hashed password will be stored here not a plain password 
   password: {
     type: String,
-    required: true,
+
+     // Password is required only for local accounts
+    required: function (this: IUser){
+      return this.authProvider === "local"
+    },
   },
+
+  // provider fields 
+  authProvider: {
+  type: String,
+  enum: ["local", "google"],
+  default: "local",
+},
+
+googleId: {
+  type: String,
+  unique: true,
+  sparse: true,
+},
 
   // profile user image url 
   avatar: {

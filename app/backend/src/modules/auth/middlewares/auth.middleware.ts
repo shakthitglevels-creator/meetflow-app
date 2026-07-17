@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken } from "../utils/jwt";
+import { AppError } from "../../../shared/errors/app-error";
+
 
 // This middleware checks weather user is logged in or not
 export const authMiddleware = (
@@ -13,14 +15,14 @@ export const authMiddleware = (
 
     //if no authorization header user is not logged in
     if (!authHeader) {
-      throw new Error("Authorization token is missing");
+      throw new AppError("Authorization token is missing", 401);
     }
 
     // Header format should be Bearer token
     const token = authHeader.split(" ")[1];
 
     if (!token) {
-      throw new Error("Invalid authorization format");
+      throw new AppError("Invalid authorization format", 401);
     }
 
     // Verify token using JWT secret
@@ -35,7 +37,9 @@ export const authMiddleware = (
     // Token is valid, allow request to continue
     next();
   } catch (error) {
-    next(error)
+   if (!(error instanceof AppError)) {
+    return next 
+      new AppError("Invalid or expired access token", 401)
+   }
   }
 };
-

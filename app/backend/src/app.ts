@@ -9,6 +9,10 @@ import healthRouter from "./modules/health/health.routes";
 import { notFoundMiddleware } from "./middleware/not-found.middleware";
 import { errorMiddleware } from "./middleware/error.middleware";
 import authRouter from "./modules/auth/routes/auth.route";
+import meetingRouter from "./modules/meetings/routes/meeting.route";
+
+import swaggerUi from "swagger-ui-express";
+import { swaggerSpec } from "./config/swagger";
 
 // create express application
 const app = express();
@@ -23,8 +27,15 @@ app.use(express.json());
 
 // final endpoint GET /health
 app.use("/health", healthRouter);
-
 app.use("/api/auth", authRouter);
+app.use("/api/meetings", meetingRouter);
+// Interactive API documentation
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec)
+);
+
 
 // notfound - middleware
 app.use(notFoundMiddleware)

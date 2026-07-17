@@ -7,8 +7,10 @@ import { sendOtpService } from "../services/auth.service"
 import { verifyOtpService } from "../services/auth.service"
 
 import { forgotPasswordService, resetPasswordService } from "../services/auth.service";
-// Handle POST /api/auth/register
+import { googleLoginService } from "../services/auth.service";
 
+
+// Handle POST /api/auth/register
 export const registerController = async (
     req: Request,
     res: Response,
@@ -186,6 +188,45 @@ export const resetPasswordController = async (
       "Password reset successfully"
     );
   } catch (error) {
+    next(error);
+  }
+};
+
+
+
+
+
+// Handles POST /api/auth/google
+export const googleLoginController = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // Google credential sent by the frontend
+    const { credential } = req.body;
+
+    // Browser/device information for session tracking
+    const userAgent = req.headers["user-agent"];
+
+    // IP address of the current request
+    const ipAddress = req.ip;
+
+    // Service verifies Google identity, finds/creates user,
+    // generates tokens and creates a session
+    const result = await googleLoginService(
+      credential,
+      userAgent,
+      ipAddress
+    );
+
+    return sendSuccess(
+      res,
+      "Google login successful",
+      result
+    );
+  } catch (error) {
+    // Pass errors to the global error middleware
     next(error);
   }
 };

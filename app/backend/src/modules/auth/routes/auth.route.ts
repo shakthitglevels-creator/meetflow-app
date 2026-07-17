@@ -22,6 +22,9 @@ import {
 import { forgotPasswordSchema } from "../validators/forgot-password.validator";
 import { resetPasswordSchema } from "../validators/reset-password.validator";
 
+import { googleAuthSchema } from "../validators/google-auth.validator";
+import { googleLoginController } from "../controllers/auth.controller";
+
 const authRouter = Router();
 
 // POST /api/auth/register
@@ -44,6 +47,12 @@ authRouter.post(
   "/reset-password",
   validate(resetPasswordSchema),
   resetPasswordController,
+);
+
+authRouter.post(
+  "/google",
+  validate(googleAuthSchema),
+  googleLoginController
 );
 
 export default authRouter;

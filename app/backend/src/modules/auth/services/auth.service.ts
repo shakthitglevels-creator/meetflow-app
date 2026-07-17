@@ -13,6 +13,11 @@ import { sendEmail } from "../../../config/email";
 import { createOtpEmailTemplate } from "../utils/otp-email-template";
 
 import { createResetPasswordEmailTemplate } from "../utils/reset-password-email-template";
+import { verifyGoogleCredential } from "../providers/google.provider";
+
+import { AppError } from "../../../shared/errors/app-error";
+import { findUserByEmail } from "../../users/repositories/user.repository";
+
 
 // handles register business logic
 export const registerUserService = async (
@@ -24,7 +29,7 @@ export const registerUserService = async (
   const existingUser = await User.findOne({ email });
 
   if (existingUser) {
-    throw new Error("User already exists");
+    throw new AppError("User already exists", 409);
   }
 
   // Convert plain password to hashed password
@@ -35,6 +40,7 @@ export const registerUserService = async (
     name,
     email,
     password: hashedPassword,
+    authProvider: "local"
   });
 
   // Never return password to frontend
@@ -55,21 +61,25 @@ export const loginUserService = async (
   ipAddress?: string,
 ) => {
   // find user by email
-  const user = await User.findOne({ email });
+  const user = await findUserByEmail(email);
 
   if (!user) {
-    throw new Error("Invalid email or password");
+    throw new AppError("Invalid email or password", 401);
   }
 
   // compare plain password with hashed password in DB
+  if (!user.password) {
+    throw new AppError("Please continue with Google to access this account", 401);
+  }
+
   const isPasswordMatch = await bcrypt.compare(password, user.password);
 
   if (!isPasswordMatch) {
-    throw new Error("Invalid email or password");
+    throw new AppError("Invalid email or password", 401);
   }
 
   if (!user.isEmailVerified) {
-    throw new Error("Please verify your email before login");
+    throw new AppError("Please verify your email before login", 403);
   }
 
   // Small safe data stored inside JWT
@@ -123,7 +133,7 @@ export const refreshTokenService = async (refreshToken: string) => {
   });
 
   if (!session) {
-    throw new Error("Invalid refresh token");
+   throw new AppError("Invalid refresh token", 401);
   }
 
   // Generate new access token
@@ -145,7 +155,7 @@ export const logoutService = async (refreshToken: string) => {
   console.log("Deleted session:", deletedSession);
 
   if (!deletedSession) {
-    throw new Error("Invalid refresh token");
+    throw new AppError("Invalid refresh token", 401);
   }
 
   return null;
@@ -323,4 +333,87 @@ export const resetPasswordService = async (
   await redisClient.del(otpKey);
 
   return null;
+};
+
+
+
+
+// Handles Google sign-up and login
+export const googleLoginService = async (
+  credential: string,
+  userAgent?: string,
+  ipAddress?: string
+) => {
+  // Ask the Google provider to verify the credential
+  const googleUser = await verifyGoogleCredential(credential);
+
+  // Try to find an existing user with the same email
+  let user = await User.findOne({
+    email: googleUser.email,
+  });
+
+  // User does not exist, so create a Google account
+  if (!user) {
+    user = await User.create({
+      name: googleUser.name,
+      email: googleUser.email,
+      avatar: googleUser.avatar,
+      googleId: googleUser.googleId,
+      authProvider: "google",
+      isEmailVerified: true,
+    });
+  }
+
+  // Existing local account with the same email
+  if (
+    user.authProvider === "local" &&
+    !user.googleId
+  ) {
+    // Link Google identity to the existing account
+    user.googleId = googleUser.googleId;
+
+    // Keep local password login and also allow Google login
+    await user.save();
+  }
+
+  // Create the payload used inside MeetFlow JWTs
+  const tokenPayload = {
+    userId: user._id.toString(),
+    role: user.role,
+  };
+
+  // Create MeetFlow tokens
+  const accessToken = generateAccessToken(tokenPayload);
+  const refreshToken = generateRefreshToken(tokenPayload);
+
+  // Session expires after 7 days
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7);
+
+  // Store this Google login as a device session
+  await Session.create({
+    userId: user._id,
+    refreshToken,
+    userAgent,
+    ipAddress,
+    expiresAt,
+  });
+
+  // Track the latest successful login
+  user.lastLoginAt = new Date();
+  await user.save();
+
+  return {
+    accessToken,
+    refreshToken,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      avatar: user.avatar,
+      role: user.role,
+      isEmailVerified: user.isEmailVerified,
+      authProvider: user.authProvider,
+    },
+  };
 };

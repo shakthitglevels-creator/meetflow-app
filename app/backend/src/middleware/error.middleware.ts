@@ -4,6 +4,7 @@
 // local import 
 import { NextFunction, Request, Response } from "express";
 import { sendError } from "../shared/response";
+import { AppError } from "../shared/errors/app-error";
 
 
 // Global Error handler Middleware
@@ -15,9 +16,20 @@ export const errorMiddleware = (
 ) => {
     console.error(error);
 
+
+  // AppError contains a known HTTP status code
+  if (error instanceof AppError) {
+    return sendError(
+      res,
+      error.message,
+      [],
+      error.statusCode
+    );
+  }
+
     return sendError(
         res,
-        error.message || "Internal Server Error",
+        "Internal Server Error",
         [],
         500
 
