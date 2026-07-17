@@ -10,6 +10,7 @@ import {
   findMeetingParticipant,
   markParticipantAsJoined,
   markParticipantAsLeft,
+  countJoinedParticipants
 } from "../repositories/meeting-participant.repository";
 
 import { AppError } from "../../../shared/errors/app-error";
@@ -50,6 +51,44 @@ export const createMeetingService = async (hostId: string, title?: string) => {
     createdAt: meeting.createdAt,
   };
 };
+
+// get meeting details 
+export const getMeetingDetailsService = async (meetingCode: string) => {
+  const meeting = await findMeetingByCode(meetingCode);
+
+  if (!meeting) {
+    throw new AppError("Meeting not found", 404)
+  }
+
+    // Count only participants who are currently inside
+  const participantCount = await countJoinedParticipants(
+    meeting._id.toString()
+  );
+
+  // Populated host data
+  const host = meeting.hostId as any;
+
+    return {
+    id: meeting._id,
+    title: meeting.title,
+    meetingCode: meeting.meetingCode,
+    status: meeting.status,
+
+
+    host: {
+      id: host._id,
+      name: host.name,
+      avatar: host.avatar,
+      email: host.email,
+    },
+
+    participantCount,
+    scheduledAt: meeting.scheduledAt,
+    startedAt: meeting.startedAt,
+    endedAt: meeting.endedAt,
+    hostId: meeting.hostId,
+  };
+}
 
 // clean API-ready data
 const buildJoinMeetingResponse = (meeting: any, participant: any) => {

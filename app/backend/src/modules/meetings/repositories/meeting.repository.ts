@@ -7,7 +7,7 @@ import { CreateMeetingInput } from "../dto/create-meeting.dto";
 export const findMeetingByCode = async (
     meetingCode: string
 ) => {
-    return Meeting.findOne({ meetingCode })
+    return Meeting.findOne({ meetingCode, }).populate("hostId", "name avatar email")
 };
 
 // Create a new meeting document 

@@ -60,3 +60,12 @@ export const markParticipantAsLeft = async (
     }
   )
 }
+
+
+// count users who are currently inside he meeting 
+export const countJoinedParticipants = async (meetingId: string) => {
+  return MeetingParticipant.countDocuments({
+    meetingId: new Types.ObjectId(meetingId),
+    status: "joined",
+  })
+}

@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { sendSuccess } from "../../../shared/response";
-import { createMeetingService, joinMeetingService, leaveMeetingService } from "../services/meeting.service";
+import { createMeetingService, joinMeetingService, leaveMeetingService, getMeetingDetailsService } from "../services/meeting.service";
 
 export const createMeetingController = async (
   req: Request,
@@ -84,6 +84,35 @@ export const leaveMeetingController = async (
     return sendSuccess(
       res,
       "Meeting left successfully",
+      result
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+
+// Handles fetching meeting preview/details
+export const getMeetingDetailsController = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // Meeting code comes from URL params
+    const meetingCode = Array.isArray(req.params.meetingCode)
+      ? req.params.meetingCode[0]
+      : req.params.meetingCode;
+
+    // Service fetches meeting, host, and participant count
+    const result = await getMeetingDetailsService(
+      meetingCode
+    );
+
+    return sendSuccess(
+      res,
+      "Meeting details fetched successfully",
       result
     );
   } catch (error) {

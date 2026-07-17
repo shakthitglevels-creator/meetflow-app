@@ -5,7 +5,7 @@ import { createMeetingController } from "../controllers/meeting.controller";
 import { createMeetingSchema } from "../validators/create-meeting.validator";
 import { validateParams } from "../middleware/validate-params.middleware";
 import { joinMeetingParamsSchema } from "../validators/join-meeting.validator";
-import { joinMeetingController, leaveMeetingController } from "../controllers/meeting.controller";
+import { joinMeetingController, leaveMeetingController, getMeetingDetailsController } from "../controllers/meeting.controller";
 
 
 const meetingRouter = Router()
@@ -75,6 +75,108 @@ const meetingRouter = Router()
  */
 // create a new meeting 
 meetingRouter.post("/", authMiddleware, validate(createMeetingSchema), createMeetingController)
+
+/**
+ * @openapi
+ * /api/meetings/{meetingCode}:
+ *   get:
+ *     tags:
+ *       - Meetings
+ *     summary: Get meeting details
+ *     description: Returns meeting preview information, host details, and the number of currently joined participants.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: meetingCode
+ *         required: true
+ *         description: Six-character public meeting code
+ *         schema:
+ *           type: string
+ *           minLength: 6
+ *           maxLength: 6
+ *         example: 8XK29Q
+ *     responses:
+ *       200:
+ *         description: Meeting details fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Meeting details fetched successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: 66a4cdd90ea8fe6863b98c243
+ *                     title:
+ *                       type: string
+ *                       example: Backend Team Discussion
+ *                     meetingCode:
+ *                       type: string
+ *                       example: 8XK29Q
+ *                     status:
+ *                       type: string
+ *                       enum:
+ *                         - scheduled
+ *                         - open
+ *                         - ended
+ *                         - cancelled
+ *                       example: open
+ *                     host:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         name:
+ *                           type: string
+ *                           example: Shakthivel
+ *                         email:
+ *                           type: string
+ *                           format: email
+ *                           example: shakthi@example.com
+ *                         avatar:
+ *                           type: string
+ *                           nullable: true
+ *                     participantCount:
+ *                       type: integer
+ *                       example: 2
+ *                     scheduledAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                     startedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                     endedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *       400:
+ *         description: Invalid meeting code format
+ *       401:
+ *         description: Missing, invalid, or expired access token
+ *       404:
+ *         description: Meeting not found
+ */
+meetingRouter.get(
+  "/:meetingCode",
+  authMiddleware,
+  validateParams(joinMeetingParamsSchema),
+  getMeetingDetailsController
+); 
+
 
 
 /**
@@ -225,6 +327,12 @@ meetingRouter.post(
   validateParams(joinMeetingParamsSchema),
   leaveMeetingController
 );
+
+
+
+
+
+
 
 
 
