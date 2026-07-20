@@ -3,6 +3,7 @@ import { generateMeetingCode } from "../utils/meeting-code";
 import {
   createMeeting,
   findMeetingByCode,
+  markMeetingAsEnded,
 } from "../repositories/meeting.repository";
 
 import {
@@ -12,7 +13,9 @@ import {
   markParticipantAsLeft,
   countJoinedParticipants,
   findJoinedParticipants,
+  markAllParticipantsAsLeft
 } from "../repositories/meeting-participant.repository";
+
 
 import { AppError } from "../../../shared/errors/app-error";
 
@@ -233,4 +236,69 @@ export const getMeetingParticipantsService = async (meetingCode: string) => {
       email: participant.userId.email,
     },
   }));
+};
+
+
+export const endMeetingService = async (
+  meetingCode: string,
+  userId: string
+) => {
+  const meeting = await findMeetingByCode(meetingCode);
+
+  if (!meeting) {
+    throw new AppError("Meeting not found", 404);
+  }
+
+  const hostId =
+    meeting.hostId &&
+    typeof meeting.hostId === "object" &&
+    "_id" in meeting.hostId
+      ? meeting.hostId._id.toString()
+      : String(meeting.hostId);
+
+  if (hostId !== userId) {
+    throw new AppError(
+      "Only the host can end this meeting",
+      403
+    );
+  }
+
+  if (meeting.status === "ended") {
+    return {
+      meetingCode: meeting.meetingCode,
+      status: meeting.status,
+      endedAt: meeting.endedAt,
+    };
+  }
+
+  if (meeting.status !== "open") {
+    throw new AppError(
+      "This meeting cannot be ended",
+      409
+    );
+  }
+
+  const updatedMeeting = await markMeetingAsEnded(
+    meeting._id.toString()
+  );
+
+  if (!updatedMeeting) {
+    throw new AppError(
+      "Unable to end the meeting",
+      500
+    );
+  }
+
+  const participantsUpdate =
+    await markAllParticipantsAsLeft(
+      meeting._id.toString()
+    );
+
+  return {
+    meetingCode: updatedMeeting.meetingCode,
+    status: updatedMeeting.status,
+    endedAt: updatedMeeting.endedAt,
+    participantsMarkedLeft:
+      participantsUpdate.modifiedCount,
+  };
 };

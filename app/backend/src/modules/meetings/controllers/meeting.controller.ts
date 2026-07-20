@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from "express";
 import { sendSuccess } from "../../../shared/response";
-import { createMeetingService, joinMeetingService, leaveMeetingService, getMeetingDetailsService, getMeetingParticipantsService } from "../services/meeting.service";
+import { createMeetingService, joinMeetingService, leaveMeetingService, getMeetingDetailsService, getMeetingParticipantsService,
+  
+ } from "../services/meeting.service";
+ import { endMeetingService } from "../services/meeting.service";
 
 export const createMeetingController = async (
   req: Request,
@@ -142,6 +145,37 @@ export const getMeetingParticipantsController = async (
       res,
       "Meeting participants fetched successfully",
       participants
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Handles ending a meeting for everyone
+export const endMeetingController = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    // Public meeting code comes from the URL
+    const meetingCode = Array.isArray(req.params.meetingCode)
+      ? req.params.meetingCode[0]
+      : req.params.meetingCode;
+
+    // Logged-in user comes from auth middleware
+    const userId = (req as any).user.userId;
+
+    // Service verifies host ownership and ends the meeting
+    const result = await endMeetingService(
+      meetingCode,
+      userId
+    );
+
+    return sendSuccess(
+      res,
+      "Meeting ended successfully",
+      result
     );
   } catch (error) {
     next(error);

@@ -16,3 +16,20 @@ export const createMeeting = async (
 ) => {
     return Meeting.create(meetingData)
 }
+
+
+// Mark a meeting as ended
+export const markMeetingAsEnded = async (
+  meetingId: string
+) => {
+  return Meeting.findByIdAndUpdate(
+    meetingId,
+    {
+      status: "ended",
+      endedAt: new Date(),
+    },
+    {
+      new: true,
+    }
+  );
+};

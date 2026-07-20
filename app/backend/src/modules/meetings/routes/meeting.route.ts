@@ -5,11 +5,15 @@ import { createMeetingController } from "../controllers/meeting.controller";
 import { createMeetingSchema } from "../validators/create-meeting.validator";
 import { validateParams } from "../middleware/validate-params.middleware";
 import { joinMeetingParamsSchema } from "../validators/join-meeting.validator";
-import { joinMeetingController, leaveMeetingController, getMeetingDetailsController, getMeetingParticipantsController } from "../controllers/meeting.controller";
+import {
+  joinMeetingController,
+  leaveMeetingController,
+  getMeetingDetailsController,
+  getMeetingParticipantsController,
+  endMeetingController
+} from "../controllers/meeting.controller";
 
-
-const meetingRouter = Router()
-
+const meetingRouter = Router();
 
 /**
  * @openapi
@@ -73,8 +77,13 @@ const meetingRouter = Router()
  *       400:
  *         description: Validation failed
  */
-// create a new meeting 
-meetingRouter.post("/", authMiddleware, validate(createMeetingSchema), createMeetingController)
+// create a new meeting
+meetingRouter.post(
+  "/",
+  authMiddleware,
+  validate(createMeetingSchema),
+  createMeetingController,
+);
 
 /**
  * @openapi
@@ -174,11 +183,8 @@ meetingRouter.get(
   "/:meetingCode",
   authMiddleware,
   validateParams(joinMeetingParamsSchema),
-  getMeetingDetailsController
-); 
-
-
-
+  getMeetingDetailsController,
+);
 
 /**
  * @openapi
@@ -261,9 +267,8 @@ meetingRouter.get(
   "/:meetingCode/participants",
   authMiddleware,
   validateParams(joinMeetingParamsSchema),
-  getMeetingParticipantsController
+  getMeetingParticipantsController,
 );
-
 
 /**
  * @openapi
@@ -345,8 +350,12 @@ meetingRouter.get(
  *       404:
  *         description: Meeting not found
  */
-meetingRouter.post("/:meetingCode/join", authMiddleware, validateParams(joinMeetingParamsSchema),joinMeetingController);
-
+meetingRouter.post(
+  "/:meetingCode/join",
+  authMiddleware,
+  validateParams(joinMeetingParamsSchema),
+  joinMeetingController,
+);
 
 /**
  * @openapi
@@ -411,21 +420,83 @@ meetingRouter.post(
   "/:meetingCode/leave",
   authMiddleware,
   validateParams(joinMeetingParamsSchema),
-  leaveMeetingController
+  leaveMeetingController,
 );
 
 
 
 
 
+/**
+ * @openapi
+ * /api/meetings/{meetingCode}/end:
+ *   post:
+ *     tags:
+ *       - Meetings
+ *     summary: End a meeting for everyone
+ *     description: Allows only the meeting host to end an open meeting. The meeting is marked as ended and all currently joined participants are marked as left.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: meetingCode
+ *         required: true
+ *         description: Six-character public meeting code
+ *         schema:
+ *           type: string
+ *           minLength: 6
+ *           maxLength: 6
+ *         example: 8XK29Q
+ *     responses:
+ *       200:
+ *         description: Meeting ended successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Meeting ended successfully
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     meetingCode:
+ *                       type: string
+ *                       example: 8XK29Q
+ *                     status:
+ *                       type: string
+ *                       enum:
+ *                         - ended
+ *                       example: ended
+ *                     endedAt:
+ *                       type: string
+ *                       format: date-time
+ *                     participantsMarkedLeft:
+ *                       type: integer
+ *                       example: 3
+ *       400:
+ *         description: Invalid meeting code format
+ *       401:
+ *         description: Missing, invalid, or expired access token
+ *       403:
+ *         description: Only the host can end the meeting
+ *       404:
+ *         description: Meeting not found
+ *       409:
+ *         description: The meeting's current status does not allow it to be ended
+ *       500:
+ *         description: Unable to update the meeting
+ */
 
-
-
-
-
+meetingRouter.post(
+  "/:meetingCode/end",
+  authMiddleware,
+  validateParams(joinMeetingParamsSchema),
+  endMeetingController
+);
 
 export default meetingRouter;
-
-
-
-

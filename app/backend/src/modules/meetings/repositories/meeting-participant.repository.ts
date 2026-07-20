@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import { MeetingParticipant } from "../meeting-participant.model";
 
+
 // find one participants record for one meeting
 export const findMeetingParticipant = async (
   meetingId: string,
@@ -88,3 +89,23 @@ export const findJoinedParticipants = async (
       joinedAt: 1,
     });
 };  
+
+
+
+// Mark all currently joined participants as left
+export const markAllParticipantsAsLeft = async (
+  meetingId: string
+) => {
+  const leftAt = new Date();
+
+  return MeetingParticipant.updateMany(
+    {
+      meetingId: new Types.ObjectId(meetingId),
+      status: "joined",
+    },
+    {
+      status: "left",
+      leftAt,
+    }
+  );
+};
