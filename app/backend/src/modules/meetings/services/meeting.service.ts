@@ -13,9 +13,8 @@ import {
   markParticipantAsLeft,
   countJoinedParticipants,
   findJoinedParticipants,
-  markAllParticipantsAsLeft
+  markAllParticipantsAsLeft,
 } from "../repositories/meeting-participant.repository";
-
 
 import { AppError } from "../../../shared/errors/app-error";
 
@@ -238,10 +237,9 @@ export const getMeetingParticipantsService = async (meetingCode: string) => {
   }));
 };
 
-
 export const endMeetingService = async (
   meetingCode: string,
-  userId: string
+  userId: string,
 ) => {
   const meeting = await findMeetingByCode(meetingCode);
 
@@ -257,10 +255,7 @@ export const endMeetingService = async (
       : String(meeting.hostId);
 
   if (hostId !== userId) {
-    throw new AppError(
-      "Only the host can end this meeting",
-      403
-    );
+    throw new AppError("Only the host can end this meeting", 403);
   }
 
   if (meeting.status === "ended") {
@@ -272,33 +267,59 @@ export const endMeetingService = async (
   }
 
   if (meeting.status !== "open") {
-    throw new AppError(
-      "This meeting cannot be ended",
-      409
-    );
+    throw new AppError("This meeting cannot be ended", 409);
   }
 
-  const updatedMeeting = await markMeetingAsEnded(
-    meeting._id.toString()
-  );
+  const updatedMeeting = await markMeetingAsEnded(meeting._id.toString());
 
   if (!updatedMeeting) {
-    throw new AppError(
-      "Unable to end the meeting",
-      500
-    );
+    throw new AppError("Unable to end the meeting", 500);
   }
 
-  const participantsUpdate =
-    await markAllParticipantsAsLeft(
-      meeting._id.toString()
-    );
+  const participantsUpdate = await markAllParticipantsAsLeft(
+    meeting._id.toString(),
+  );
 
   return {
     meetingCode: updatedMeeting.meetingCode,
     status: updatedMeeting.status,
     endedAt: updatedMeeting.endedAt,
-    participantsMarkedLeft:
-      participantsUpdate.modifiedCount,
+    participantsMarkedLeft: participantsUpdate.modifiedCount,
   };
+};
+
+export const joinMeetingRoomService = async (
+  meetingCode: string,
+  userId: string,
+) => {
+  const meeting = await findMeetingByCode(meetingCode);
+
+  if (!meeting) {
+    throw new AppError("Meeting not found", 404);
+  }
+
+  const participant = await findMeetingParticipant(
+    meeting._id.toString(),
+    userId,
+  );
+
+  if (!participant) {
+    throw new AppError("You must join the meeting before subscribing.", 403);
+  }
+
+  if (participant.status === "left") {
+    throw new AppError("Participant has already left the meeting.", 403);
+  }
+
+  return{
+
+    meetingCode,
+
+    participantId:
+    participant._id,
+
+    role:
+    participant.role
+
+}
 };

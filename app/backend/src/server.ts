@@ -1,55 +1,66 @@
-// backend/src/server.ts - starts the server 
+// backend/src/server.ts - starts the server
 
-// library imports 
-import dns from "dns"
+// library imports
+import dns from "dns";
 
-// local imports 
+// local imports
 import app from "./app";
 import { env } from "./config/env";
 import { connectDatabase } from "./config/database";
 import { connectRedis } from "./config/redis";
+import { createServer } from "http";
+import { initializeSocket } from "./config/socket";
 
-// port issue solved by dns 
-dns.setServers(["8.8.8.8", "8.8.4.4"])
+// port issue solved by dns
+dns.setServers(["8.8.8.8", "8.8.4.4"]);
 
-// start the express server 
+// start the express server
 // app.listen(env.PORT, () => {
 //     console.log(`Server is running on port ${env.PORT}`)
 // })
 
-// application startup - using bootstrap process server only starts after db redis all connects 
+// application startup - using bootstrap process server only starts after db redis all connects
 const bootstrap = async () => {
-    try {
-        
-        // initialize database 
-        await connectDatabase();
+  try {
+    // initialize database
+    await connectDatabase();
 
-        // initialize redis 
-        await connectRedis();
+    // initialize redis
+    await connectRedis();
 
-        // start HTTP server 
-        const server = app.listen(env.PORT, () => {
-            console.log(`Server running on port ${env.PORT}`)
-        })
-    } catch (error) {
-        console.error("Application startup failed", error)
-        process.exit(1)
-    }
+    // start HTTP server
+    // const server = app.listen(env.PORT, () => {
+    //   console.log(`Server running on port ${env.PORT}`);
+    // });
+
+    // create a node http server using the express app
+    const httpServer = createServer(app);
+
+    //  attach socket.io to the same http server
+    initializeSocket(httpServer);
+
+    // Start REST APIs and Socket.IO on the same port
+    httpServer.listen(env.PORT, () => {
+      console.log(`Server running on port ${env.PORT}`);
+    });
+  } catch (error) {
+    console.error("Application startup failed", error);
+    process.exit(1);
+  }
 };
 
 // Startup application
-bootstrap()
+bootstrap();
 
-// handle Crtl + C gracefully 
+// handle Crtl + C gracefully
 process.on("SIGINT", () => {
-    console.log("SIGINT received")
+  console.log("SIGINT received");
 
-    process.exit(0)
+  process.exit(0);
 });
 
 // handle docker/ kubernetes shutdown
 process.on("SIGTERM", () => {
-    console.log("SIGTERM received")
-    process.exit(0);
+  console.log("SIGTERM received");
+  process.exit(0);
 });
-

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>MeetFlow Participant Socket Test</title>
+  </head>
+
+  <body>
+    <h1>MeetFlow Participant</h1>
+    <p id="status">JavaScript loading...</p>
+
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
+    <script>
+      console.log("Participant script started");
+
+      const statusElement = document.getElementById("status");
+
+      const accessToken =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2YTYxYjE4OGJlODMwZTRmMDRmNzE1MzgiLCJyb2xlIjoidXNlciIsImlhdCI6MTc4NDc5MDU0NCwiZXhwIjoxNzg0NzkxNDQ0fQ.Gw634IoEZu-E0pHbvN_YQhmU9oIpv5L6VKhYTH7RrK4";
+      const meetingCode = "QJED2Q";
+
+      const leaveButton = document.getElementById("leaveButton");
+
+      leaveButton.addEventListener("click", async () => {
+        console.log("Participant requested leave");
+
+        socket.emit("meeting:leave-room", meetingCode);
+      });
+
+      if (typeof io === "undefined") {
+        statusElement.textContent = "Socket.IO client library did not load";
+
+        throw new Error("io is not defined");
+      }
+
+      statusElement.textContent = "Connecting to backend...";
+
+      const socket = io("http://localhost:5000", {
+        auth: {
+          token: accessToken,
+        },
+      });
+
+      socket.on("connect", () => {
+        console.log("Participant socket connected:", socket.id);
+
+        statusElement.textContent = `Socket connected: ${socket.id}`;
+
+        socket.emit("meeting:join-room", meetingCode);
+      });
+
+      socket.on("meeting:left-room", (data) => {
+        console.log("Participant left room:", data);
+
+        statusElement.textContent = `Left room: ${data.meetingCode}`;
+      });
+
+      socket.on("meeting:joined-room", (data) => {
+        console.log("Participant joined room:", data);
+
+        statusElement.textContent = `Participant joined room: ${data.meetingCode}`;
+      });
+
+      socket.on("meeting:presence-joined", (data) => {
+        console.log("Another participant is online:", data);
+      });
+
+      socket.on("meeting:error", (error) => {
+        console.error("Meeting error:", error);
+
+        statusElement.textContent = `Meeting error: ${error.message}`;
+      });
+
+      socket.on("connect_error", (error) => {
+        console.error("Connection error:", error);
+
+        statusElement.textContent = `Connection failed: ${error.message}`;
+      });
+
+      socket.on("disconnect", (reason) => {
+        console.log("Participant disconnected:", reason);
+
+        statusElement.textContent = `Disconnected: ${reason}`;
+      });
+    </script>
+    <button id="leaveButton" type="button">Leave Room</button>
+  </body>
+</html>

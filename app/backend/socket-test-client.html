@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>MeetFlow Socket Test</title>
+  </head>
+
+  <body>
+    <h1>MeetFlow Socket.IO Test</h1>
+
+    <p id="status">Connecting...</p>
+
+    <!-- Socket.IO client library served from CDN -->
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
+
+    <script>
+      const accessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2YTU5ZjZkMTliMDE3ZDViNzk5M2FmZmMiLCJyb2xlIjoiaG9zdCIsImlhdCI6MTc4NDc5MDMxOSwiZXhwIjoxNzg0NzkxMjE5fQ.unwD6sVPPJ5DFI6eO67HHfU710WRkaP3ixmV8rSIh9s";
+      const meetingCode = "QJED2Q";
+
+      const socket = io("http://localhost:5000", {
+        auth: {
+          token: accessToken,
+        },
+      });
+
+      socket.on("connect", () => {
+        console.log("Socket connected:", socket.id);
+
+        document.getElementById("status").textContent =
+          `Connected: ${socket.id}`;
+
+        // Subscribe this socket to the meeting room
+        socket.emit("meeting:join-room", meetingCode);
+      });
+
+      socket.on("meeting:joined-room", (data) => {
+        console.log("Room joined successfully:", data);
+
+        document.getElementById("status").textContent =
+          `Joined room: ${data.meetingCode}`;
+      });
+
+      socket.on("meeting:presence-joined", (data) => {
+        console.log("Another participant became online:", data);
+      });
+
+      socket.on("meeting:error", (error) => {
+        console.error("Meeting socket error:", error);
+
+        document.getElementById("status").textContent =
+          `Meeting error: ${error.message}`;
+      });
+
+      socket.on("connect_error", (error) => {
+        console.error("Socket connection error:", error.message);
+
+        document.getElementById("status").textContent =
+          `Connection failed: ${error.message}`;
+      });
+
+      socket.on("disconnect", (reason) => {
+        console.log("Socket disconnected:", reason);
+      });
+    </script>
+  </body>
+</html>
