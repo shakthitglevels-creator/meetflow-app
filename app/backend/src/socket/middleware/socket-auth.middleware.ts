@@ -1,30 +1,75 @@
-import { Socket } from "socket.io";
+import type { ExtendedError, Socket } from "socket.io";
+
 import { verifyAccessToken } from "../../modules/auth/utils/jwt";
+import { findUserById } from "../../modules/users/repositories/user.repository";
 
-export const socketAuthMiddleware = (socket: Socket, next: (error?: Error) => void) => {
-    try {
-        // read access token sent during the socket.io handshake
-        const token = socket.handshake.auth.token
+/*
+ * Authenticates a Socket.IO connection during
+ * the initial handshake.
+ *
+ * The socket is allowed to connect only when:
+ *
+ * - access token is valid
+ * - user exists
+ * - email is verified
+ * - account status is active
+ */
+export const socketAuthMiddleware = async (
+  socket: Socket,
+  next: (error?: ExtendedError) => void,
+): Promise<void> => {
+  try {
+    const token = socket.handshake.auth?.token;
 
-        if (typeof token !== "string" || !token.trim()) {
-            return next (
-                new Error("Socket authentication token is missing")
-            )
-        }
-        
-        // Verify the same access token used by the REST APIs
-        const decoded = verifyAccessToken(token)
+    if (typeof token !== "string" || !token.trim()) {
+      next(new Error("Socket authentication token is missing"));
 
-        // Store the authenticated identity on this socket connection
-        socket.data.user = {
-            userId: decoded.userId,
-            role: decoded.role,
-        }
-
-        next()
-    } catch (error) {
-        return next (
-            new Error ("Invalid or expired socket authentication token are")
-        )
+      return;
     }
-}
+
+    /*
+     * Verify the same access token used by REST APIs.
+     */
+    const decoded = verifyAccessToken(token.trim());
+
+    /*
+     * Load the latest account status from MongoDB.
+     */
+    const user = await findUserById(decoded.userId);
+
+    if (!user) {
+      next(new Error("User account not found"));
+
+      return;
+    }
+
+    if (!user.isEmailVerified) {
+      next(new Error("Email verification is required"));
+
+      return;
+    }
+
+    if (user.status !== "active") {
+      next(new Error("Account is not active"));
+
+      return;
+    }
+
+    /*
+     * Store trusted user identity on the socket.
+     *
+     * Later socket event handlers can use:
+     *
+     * socket.data.user.userId
+     * socket.data.user.role
+     */
+    socket.data.user = {
+      userId: user._id.toString(),
+      role: user.role,
+    };
+
+    next();
+  } catch {
+    next(new Error("Invalid or expired socket authentication token"));
+  }
+};

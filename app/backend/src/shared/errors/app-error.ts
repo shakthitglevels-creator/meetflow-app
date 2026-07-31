@@ -1,19 +1,33 @@
-// Custom error used across the entire application
 export class AppError extends Error {
-  // HTTP status that should be returned to the client
-  statusCode: number;
+  public readonly statusCode: number;
 
-  constructor(message: string, statusCode: number) {
-    // Give the error message to JavaScript's built-in Error class
+  public readonly details?: Record<
+    string,
+    unknown
+  >;
+
+  public readonly isOperational: boolean;
+
+  constructor(
+    message: string,
+    statusCode: number,
+    details?: Record<string, unknown>,
+  ) {
     super(message);
 
-    // Store the HTTP status code
-    this.statusCode = statusCode;
-
-    // Give the error the correct class name
     this.name = "AppError";
+    this.statusCode = statusCode;
+    this.details = details;
+    this.isOperational = true;
 
-    // Fix the prototype chain after extending Error
-    Object.setPrototypeOf(this, AppError.prototype);
+    Object.setPrototypeOf(
+      this,
+      AppError.prototype,
+    );
+
+    Error.captureStackTrace?.(
+      this,
+      this.constructor,
+    );
   }
 }

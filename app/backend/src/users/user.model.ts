@@ -1,101 +1,150 @@
-// src/modules/users/user.model.ts
 
-// global imports
-import mongoose from "mongoose";
-import { Schema, Document } from "mongoose";
 
-// Allowed user roles in meetflow
+
+
+import mongoose, {
+  Document,
+  Schema,
+} from "mongoose";
+
+// Roles available inside MeetFlow
 export type UserRole = "user" | "admin";
 
-// Allowed auth provider 
-export type AuthProvider = "local" | "google"
+// Supported authentication providers
+export type AuthProvider = "local" | "google";
 
-// typescript shape of a user document
+// Current state of the user account
+export type UserStatus =
+  | "pending_verification"
+  | "active"
+  | "suspended";
+
+// TypeScript representation of a MongoDB user document
 export interface IUser extends Document {
   name: string;
   email: string;
+
+  /*
+   * This field contains the bcrypt password hash,
+   * never the user's plain-text password.
+   *
+   * It is optional because Google-only accounts
+   * may not have a local password.
+   */
   password?: string;
+
   authProvider: AuthProvider;
   googleId?: string;
   avatar?: string;
+
   role: UserRole;
+
+  status: UserStatus;
   isEmailVerified: boolean;
-  lastLoginAt?: Date;
+  emailVerifiedAt?: Date | null;
+
+  lastLoginAt?: Date | null;
+
   createdAt: Date;
   updatedAt: Date;
 }
 
-// mongodb schema definition
+const userSchema = new Schema<IUser>(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+      minlength: 2,
+      maxlength: 100,
+    },
 
-const userSchema = new Schema<IUser>({
-  // user displays name
-  name: {
-    type: String,
-    required: true,
-    trim: true,
-  },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+      index: true,
+    },
 
-  // Email must be unique because it is used for login 
-  email: {
-    type: String,
-    required: true,
-    unique: true,
-    lowercase: true,
-    trim: true,
-    index: true
-  },
+    authProvider: {
+      type: String,
+      enum: ["local", "google"],
+      default: "local",
+      required: true,
+    },
 
-  // Hashed password will be stored here not a plain password 
-  password: {
-    type: String,
+    /*
+     * Required only when this is a local
+     * email-and-password account.
+     */
+    password: {
+      type: String,
 
-     // Password is required only for local accounts
-    required: function (this: IUser){
-      return this.authProvider === "local"
+      required: function (this: IUser) {
+        return this.authProvider === "local";
+      },
+    },
+
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+    },
+
+    avatar: {
+      type: String,
+      default: null,
+    },
+
+    role: {
+      type: String,
+      enum: ["user", "admin"],
+      default: "user",
+      required: true,
+    },
+
+    /*
+     * Local users remain pending until
+     * their six-digit OTP is verified.
+     */
+    status: {
+      type: String,
+      enum: [
+        "pending_verification",
+        "active",
+        "suspended",
+      ],
+      default: "pending_verification",
+      required: true,
+      index: true,
+    },
+
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+      required: true,
+      index: true,
+    },
+
+    emailVerifiedAt: {
+      type: Date,
+      default: null,
+    },
+
+    lastLoginAt: {
+      type: Date,
+      default: null,
     },
   },
-
-  // provider fields 
-  authProvider: {
-  type: String,
-  enum: ["local", "google"],
-  default: "local",
-},
-
-googleId: {
-  type: String,
-  unique: true,
-  sparse: true,
-},
-
-  // profile user image url 
-  avatar: {
-    type: String,
-    default: null,
+  {
+    timestamps: true,
   },
+);
 
-  // role for rbac later 
-  role: {
-    type: String,
-    enum: ["user", "admin"],
-    default: "user",
-  },
-
-//   used for Otp/email verification flow later
-  isEmailVerified: {
-    type: Boolean,
-    default: false,
-  },
-
-  // updated when user logs in 
-  lastLoginAt: {
-    type: Date,
-    default: null,
-  },
-}, {
-    timestamps: true
-});
-
-
-// export user model 
-export const User = mongoose.model<IUser>("User", userSchema)
+export const User = mongoose.model<IUser>(
+  "User",
+  userSchema,
+);

@@ -1,19 +1,38 @@
 import { Router } from "express";
+
 import { authMiddleware } from "../../auth/middlewares/auth.middleware";
 import { validate } from "../../../middleware/validate.middleware";
-import { createMeetingController } from "../controllers/meeting.controller";
-import { createMeetingSchema } from "../validators/create-meeting.validator";
-import { validateParams } from "../middleware/validate-params.middleware";
-import { joinMeetingParamsSchema } from "../validators/join-meeting.validator";
+
 import {
-  joinMeetingController,
-  leaveMeetingController,
+  createMeetingController,
+  endMeetingController,
   getMeetingDetailsController,
   getMeetingParticipantsController,
-  endMeetingController
+  joinMeetingController,
+  leaveMeetingController,
 } from "../controllers/meeting.controller";
 
+import { validateParams } from "../middleware/validate-params.middleware";
+
+import { createMeetingSchema } from "../validators/create-meeting.validator";
+import { joinMeetingParamsSchema } from "../validators/join-meeting.validator";
+
 const meetingRouter = Router();
+
+/*
+ * All meeting routes are protected.
+ *
+ * The auth middleware verifies:
+ * 1. Authorization header exists.
+ * 2. Access token is valid.
+ * 3. User exists in MongoDB.
+ * 4. Email is verified.
+ * 5. Account status is active.
+ *
+ * Because this middleware is added here, we do not
+ * need to repeat authMiddleware on every route.
+ */
+meetingRouter.use(authMiddleware);
 
 /**
  * @openapi
@@ -22,7 +41,7 @@ const meetingRouter = Router();
  *     tags:
  *       - Meetings
  *     summary: Create an instant meeting
- *     description: Creates a new instant meeting for the authenticated user.
+ *     description: Creates a new instant meeting for the authenticated and active user.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -72,15 +91,15 @@ const meetingRouter = Router();
  *                     createdAt:
  *                       type: string
  *                       format: date-time
- *       401:
- *         description: Missing or invalid access token
  *       400:
- *         description: Validation failed
+ *         description: Request validation failed
+ *       401:
+ *         description: Missing, invalid, or expired access token
+ *       403:
+ *         description: Email is not verified or account is not active
  */
-// create a new meeting
 meetingRouter.post(
   "/",
-  authMiddleware,
   validate(createMeetingSchema),
   createMeetingController,
 );
@@ -173,15 +192,16 @@ meetingRouter.post(
  *                       type: string
  *                       format: date-time
  *       400:
- *         description: Invalid meeting code format
+ *         description: Invalid meeting-code format
  *       401:
  *         description: Missing, invalid, or expired access token
+ *       403:
+ *         description: Email is not verified or account is not active
  *       404:
  *         description: Meeting not found
  */
 meetingRouter.get(
   "/:meetingCode",
-  authMiddleware,
   validateParams(joinMeetingParamsSchema),
   getMeetingDetailsController,
 );
@@ -193,7 +213,7 @@ meetingRouter.get(
  *     tags:
  *       - Meetings
  *     summary: Get currently joined meeting participants
- *     description: Returns all participants who are currently marked as joined, including their basic user details.
+ *     description: Returns all participants currently marked as joined, including their basic user details.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -257,15 +277,16 @@ meetingRouter.get(
  *                             type: string
  *                             nullable: true
  *       400:
- *         description: Invalid meeting code format
+ *         description: Invalid meeting-code format
  *       401:
  *         description: Missing, invalid, or expired access token
+ *       403:
+ *         description: Email is not verified or account is not active
  *       404:
  *         description: Meeting not found
  */
 meetingRouter.get(
   "/:meetingCode/participants",
-  authMiddleware,
   validateParams(joinMeetingParamsSchema),
   getMeetingParticipantsController,
 );
@@ -277,7 +298,7 @@ meetingRouter.get(
  *     tags:
  *       - Meetings
  *     summary: Join an existing meeting
- *     description: Allows an authenticated user to join an open meeting using its meeting code.
+ *     description: Allows an authenticated and active user to join an open meeting using its meeting code.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -342,17 +363,16 @@ meetingRouter.get(
  *                           type: string
  *                           format: date-time
  *       400:
- *         description: Invalid meeting code format
+ *         description: Invalid meeting-code format
  *       401:
- *         description: Missing or invalid access token
+ *         description: Missing, invalid, or expired access token
  *       403:
- *         description: Meeting is not available to join
+ *         description: Account is inactive, email is unverified, or meeting is unavailable
  *       404:
  *         description: Meeting not found
  */
 meetingRouter.post(
   "/:meetingCode/join",
-  authMiddleware,
   validateParams(joinMeetingParamsSchema),
   joinMeetingController,
 );
@@ -400,17 +420,19 @@ meetingRouter.post(
  *                       type: string
  *                     status:
  *                       type: string
- *                       example: left
  *                       enum:
  *                         - joined
  *                         - left
+ *                       example: left
  *                     leftAt:
  *                       type: string
  *                       format: date-time
  *       400:
- *         description: Invalid meeting code format
+ *         description: Invalid meeting-code format
  *       401:
  *         description: Missing, invalid, or expired access token
+ *       403:
+ *         description: Email is not verified or account is not active
  *       404:
  *         description: Meeting or participant record not found
  *       500:
@@ -418,14 +440,9 @@ meetingRouter.post(
  */
 meetingRouter.post(
   "/:meetingCode/leave",
-  authMiddleware,
   validateParams(joinMeetingParamsSchema),
   leaveMeetingController,
 );
-
-
-
-
 
 /**
  * @openapi
@@ -479,11 +496,11 @@ meetingRouter.post(
  *                       type: integer
  *                       example: 3
  *       400:
- *         description: Invalid meeting code format
+ *         description: Invalid meeting-code format
  *       401:
  *         description: Missing, invalid, or expired access token
  *       403:
- *         description: Only the host can end the meeting
+ *         description: Account is inactive, email is unverified, or user is not the meeting host
  *       404:
  *         description: Meeting not found
  *       409:
@@ -491,12 +508,10 @@ meetingRouter.post(
  *       500:
  *         description: Unable to update the meeting
  */
-
 meetingRouter.post(
   "/:meetingCode/end",
-  authMiddleware,
   validateParams(joinMeetingParamsSchema),
-  endMeetingController
+  endMeetingController,
 );
 
 export default meetingRouter;

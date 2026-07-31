@@ -1,419 +1,942 @@
+
+
+
 import bcrypt from "bcryptjs";
-import { User } from "../../../users/user.model";
+
+import { redisClient } from "../../../config/redis";
+import { sendEmail } from "../../../config/email";
+import { AppError } from "../../../shared/errors/app-error";
+
+import {
+  createUser,
+  findUserByEmail,
+  findUserById,
+  markUserEmailAsVerified,
+  updateLastLoginAt,
+  updateUserPassword,
+} from "../../users/repositories/user.repository";
+
 import { Session } from "../models/session.model";
+
 import {
   generateAccessToken,
   generateRefreshToken,
   verifyRefreshToken,
 } from "../utils/jwt";
-import { redisClient } from "../../../config/redis";
+
 import { generateOtp } from "../utils/otp";
-
-import { sendEmail } from "../../../config/email";
 import { createOtpEmailTemplate } from "../utils/otp-email-template";
-
 import { createResetPasswordEmailTemplate } from "../utils/reset-password-email-template";
+
 import { verifyGoogleCredential } from "../providers/google.provider";
 
-import { AppError } from "../../../shared/errors/app-error";
-import { findUserByEmail } from "../../users/repositories/user.repository";
+const OTP_EXPIRY_SECONDS = 300;
+const OTP_COOLDOWN_SECONDS = 60;
+const OTP_MAX_ATTEMPTS = 5;
 
+/*
+ * Ensures that email lookup, Redis keys and
+ * MongoDB records always use the same format.
+ */
+const normalizeEmail = (email: string): string => {
+  return email.trim().toLowerCase();
+};
 
-// handles register business logic
+/*
+ * Create an authenticated device session only
+ * after the account has passed all security checks.
+ */
+const createAuthenticationSession = async (
+  userId: string,
+  role: "user" | "admin",
+  userAgent?: string,
+  ipAddress?: string,
+) => {
+  const tokenPayload = {
+    userId,
+    role,
+  };
+
+  const accessToken =
+    generateAccessToken(tokenPayload);
+
+  const refreshToken =
+    generateRefreshToken(tokenPayload);
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7);
+
+  await Session.create({
+    userId,
+    refreshToken,
+    userAgent,
+    ipAddress,
+    expiresAt,
+  });
+
+  return {
+    accessToken,
+    refreshToken,
+  };
+};
+
+/*
+ * Creates and sends an email-verification OTP.
+ *
+ * This helper is used by both registration
+ * and the resend-OTP endpoint.
+ */
+const createAndSendVerificationOtp = async (
+  email: string,
+): Promise<void> => {
+  const normalizedEmail = normalizeEmail(email);
+
+  const otpKey =
+    `email-verification:otp:${normalizedEmail}`;
+
+  const attemptsKey =
+    `email-verification:attempts:${normalizedEmail}`;
+
+  const cooldownKey =
+    `email-verification:cooldown:${normalizedEmail}`;
+
+  const cooldownExists =
+    await redisClient.get(cooldownKey);
+
+  if (cooldownExists) {
+    throw new AppError(
+      "Please wait 60 seconds before requesting another OTP",
+      429,
+    );
+  }
+
+  const otp = generateOtp();
+
+  /*
+   * Bcrypt is acceptable here because the OTP
+   * will be verified using bcrypt.compare().
+   */
+  const hashedOtp = await bcrypt.hash(otp, 10);
+
+  /*
+   * Remove any previous attempt counter when
+   * issuing a new OTP.
+   */
+  await redisClient.del(attemptsKey);
+
+  await redisClient.set(
+    otpKey,
+    hashedOtp,
+    {
+      EX: OTP_EXPIRY_SECONDS,
+    },
+  );
+
+  await redisClient.set(
+    cooldownKey,
+    "true",
+    {
+      EX: OTP_COOLDOWN_SECONDS,
+    },
+  );
+
+  const html =
+    createOtpEmailTemplate(otp);
+
+  try {
+    await sendEmail(
+      normalizedEmail,
+      "MeetFlow Email Verification OTP",
+      `Your MeetFlow verification OTP is ${otp}. It is valid for 5 minutes.`,
+      html,
+    );
+  } catch (error) {
+    /*
+     * Do not leave a usable OTP in Redis when
+     * email delivery fails.
+     */
+    await redisClient.del(otpKey);
+    await redisClient.del(attemptsKey);
+
+    throw error;
+  }
+};
+
+// Register a local account
 export const registerUserService = async (
   name: string,
   email: string,
   password: string,
 ) => {
-  // check if email already exits
-  const existingUser = await User.findOne({ email });
+  const normalizedEmail = normalizeEmail(email);
 
-  if (existingUser) {
-    throw new AppError("User already exists", 409);
+  // const existingUser =
+  //   await findUserByEmail(normalizedEmail);
+
+  // /*
+  //  * Already active or already Google-linked users
+  //  * cannot be registered again.
+  //  */
+  // if (
+  //   existingUser &&
+  //   (
+  //     existingUser.isEmailVerified ||
+  //     existingUser.status === "active" ||
+  //     existingUser.authProvider === "google"
+  //   )
+  // ) {
+  //   throw new AppError(
+  //     "User already exists",
+  //     409,
+  //   );
+  // }
+
+  const existingUser =
+  await findUserByEmail(normalizedEmail);
+
+if (existingUser) {
+  if (
+    !existingUser.isEmailVerified &&
+    existingUser.status ===
+      "pending_verification"
+  ) {
+    throw new AppError(
+      "This email is registered but not verified. Please verify your account.",
+      409,
+      {
+        code: "EMAIL_NOT_VERIFIED",
+        requiresVerification: true,
+        email: existingUser.email,
+      },
+    );
   }
 
-  // Convert plain password to hashed password
-  const hashedPassword = await bcrypt.hash(password, 10);
+  throw new AppError(
+    "An account with this email already exists.",
+    409,
+    {
+      code: "USER_ALREADY_EXISTS",
+    },
+  );
+}
 
-  // create user in database
-  const user = await User.create({
-    name,
-    email,
+  /*
+   * If a pending user already exists, do not create
+   * another MongoDB document because email is unique.
+   *
+   * Send a new OTP through the resend endpoint instead.
+   */
+  if (existingUser) {
+    throw new AppError(
+      "This email is already registered but not verified. Please verify your account or request a new OTP.",
+      409,
+    );
+  }
+
+  const hashedPassword =
+    await bcrypt.hash(password, 10);
+
+  const user = await createUser({
+    name: name.trim(),
+    email: normalizedEmail,
     password: hashedPassword,
-    authProvider: "local"
+
+    authProvider: "local",
+    role: "user",
+
+    status: "pending_verification",
+    isEmailVerified: false,
+    emailVerifiedAt: null,
   });
 
-  // Never return password to frontend
+  try {
+    await createAndSendVerificationOtp(
+      normalizedEmail,
+    );
+  } catch (error) {
+    /*
+     * The pending user remains in MongoDB if email
+     * sending fails. The user can later request a
+     * new OTP without creating a duplicate account.
+     */
+    throw new AppError(
+      "Account created, but the verification email could not be sent. Please request a new OTP.",
+      503,
+    );
+  }
+
+  /*
+   * Registration must not generate JWTs or sessions.
+   */
   return {
-    id: user._id,
+    id: user._id.toString(),
     name: user.name,
     email: user.email,
     role: user.role,
+    status: user.status,
     isEmailVerified: user.isEmailVerified,
+    requiresVerification: true,
   };
 };
 
-// Login
+// Login using email and password
 export const loginUserService = async (
   email: string,
   password: string,
   userAgent?: string,
   ipAddress?: string,
 ) => {
-  // find user by email
-  const user = await findUserByEmail(email);
+  const normalizedEmail = normalizeEmail(email);
+
+  const user =
+    await findUserByEmail(normalizedEmail);
 
   if (!user) {
-    throw new AppError("Invalid email or password", 401);
+    throw new AppError(
+      "Invalid email or password",
+      401,
+    );
   }
 
-  // compare plain password with hashed password in DB
   if (!user.password) {
-    throw new AppError("Please continue with Google to access this account", 401);
+    throw new AppError(
+      "Please continue with Google to access this account",
+      401,
+    );
   }
 
-  const isPasswordMatch = await bcrypt.compare(password, user.password);
+  const isPasswordMatch =
+    await bcrypt.compare(
+      password,
+      user.password,
+    );
 
   if (!isPasswordMatch) {
-    throw new AppError("Invalid email or password", 401);
+    throw new AppError(
+      "Invalid email or password",
+      401,
+    );
   }
 
+  /*
+   * Never generate JWTs for an unverified user.
+   */
   if (!user.isEmailVerified) {
-    throw new AppError("Please verify your email before login", 403);
+    throw new AppError(
+      "Please verify your email before login",
+      403,
+    );
   }
 
-  // Small safe data stored inside JWT
-  const tokenPayload = {
-    userId: user._id.toString(),
-    role: user.role,
-  };
+  /*
+   * Email verification alone is not enough.
+   * Suspended or pending accounts must be blocked.
+   */
+  if (user.status !== "active") {
+    throw new AppError(
+      "This account is not active",
+      403,
+    );
+  }
 
-  // Create short-lived access token
-  const accessToken = generateAccessToken(tokenPayload);
+  const tokens =
+    await createAuthenticationSession(
+      user._id.toString(),
+      user.role,
+      userAgent,
+      ipAddress,
+    );
 
-  // Create long-lived refresh token
-  const refreshToken = generateRefreshToken(tokenPayload);
+  await updateLastLoginAt(
+    user._id.toString(),
+  );
 
-  // Session expires after 7 days
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7);
-
-  // Store refresh token in sessions collection
-  await Session.create({
-    userId: user._id,
-    refreshToken,
-    userAgent,
-    ipAddress,
-    expiresAt,
-  });
-
-  // Never return password to frontend
   return {
-    accessToken,
-    refreshToken,
+    ...tokens,
+
     user: {
-      id: user._id,
+      id: user._id.toString(),
       name: user.name,
       email: user.email,
+      avatar: user.avatar,
       role: user.role,
-      isEmailVerified: user.isEmailVerified,
+      status: user.status,
+      isEmailVerified:
+        user.isEmailVerified,
+      authProvider: user.authProvider,
     },
   };
 };
 
-// refresh token
-// refresh access token using refresh token
-export const refreshTokenService = async (refreshToken: string) => {
-  // Verify JWT signature first
-  const decoded = verifyRefreshToken(refreshToken);
+// Generate a new access token using a refresh token
+export const refreshTokenService = async (
+  refreshToken: string,
+) => {
+  const decoded =
+    verifyRefreshToken(refreshToken);
 
-  // Check if this refresh token still exists in database
   const session = await Session.findOne({
     refreshToken,
+    expiresAt: {
+      $gt: new Date(),
+    },
   });
 
   if (!session) {
-   throw new AppError("Invalid refresh token", 401);
+    throw new AppError(
+      "Invalid refresh token",
+      401,
+    );
   }
 
-  // Generate new access token
-  const accessToken = generateAccessToken({
-    userId: decoded.userId,
-    role: decoded.role,
-  });
+  /*
+   * Load the latest user state.
+   *
+   * This blocks suspended or deactivated users
+   * even when they still possess a refresh token.
+   */
+  const user = await findUserById(
+    decoded.userId,
+  );
+
+  if (
+    !user ||
+    !user.isEmailVerified ||
+    user.status !== "active"
+  ) {
+    await Session.deleteMany({
+      userId: decoded.userId,
+    });
+
+    throw new AppError(
+      "Account is not active",
+      401,
+    );
+  }
+
+  const accessToken =
+    generateAccessToken({
+      userId: user._id.toString(),
+      role: user.role,
+    });
 
   return {
     accessToken,
   };
 };
 
-// logout api
-export const logoutService = async (refreshToken: string) => {
-  const deletedSession = await Session.findOneAndDelete({ refreshToken });
-  // Find and delete the session associated with the refresh token
-
-  console.log("Deleted session:", deletedSession);
+// Logout and invalidate one device session
+export const logoutService = async (
+  refreshToken: string,
+) => {
+  const deletedSession =
+    await Session.findOneAndDelete({
+      refreshToken,
+    });
 
   if (!deletedSession) {
-    throw new AppError("Invalid refresh token", 401);
+    throw new AppError(
+      "Invalid refresh token",
+      401,
+    );
   }
 
   return null;
 };
 
-// OTP service
-export const sendOtpService = async (email: string) => {
-  // redis key that actully stores the actual hashed otp
-  const otpKey = `otp:${email}`;
+// Send or resend an email-verification OTP
+export const sendOtpService = async (
+  email: string,
+) => {
+  const normalizedEmail = normalizeEmail(email);
 
-  // redis key that controls resend cooldown
-  const cooldownKey = `otp-cooldown:${email}`;
+  const user =
+    await findUserByEmail(normalizedEmail);
 
-  // check if cooldown key already exists in redis
-  const cooldownExists = await redisClient.get(cooldownKey);
-
-  // if cooldown key exists, user requested otp too soon
-  if (cooldownExists) {
-    throw new Error("Please wait 60 seconds before requesting another OTP");
+  if (!user) {
+    throw new AppError(
+      "Account not found",
+      404,
+    );
   }
 
-  const otp = generateOtp();
+  if (user.isEmailVerified) {
+    throw new AppError(
+      "This account is already verified",
+      409,
+    );
+  }
 
-  // Hash OTP before storing it in redis
-  const hashedOtp = await bcrypt.hash(otp, 10);
+  if (
+    user.status !==
+    "pending_verification"
+  ) {
+    throw new AppError(
+      "OTP verification is not available for this account",
+      403,
+    );
+  }
 
-  // store hashed otp for 5 mins
-  await redisClient.set(otpKey, hashedOtp, {
-    EX: 300,
-  });
-
-  // Store cooldown key for 60 seconds
-  await redisClient.set(cooldownKey, "true", {
-    EX: 60,
-  });
-
-  const html = createOtpEmailTemplate(otp);
-  await sendEmail(
-    email,
-    "MeetFlow Email Verification OTP",
-    `Your MeetFlow verification OTP is ${otp}. It is valid for 5 minutes.`,
-    html,
+  await createAndSendVerificationOtp(
+    normalizedEmail,
   );
 
   return null;
 };
 
-// verify otp service
-export const verifyOtpService = async (email: string, otp: string) => {
-  const otpKey = `otp:${email}`;
-  const attemptsKey = `otp-attempts:${email}`;
+// Verify the six-digit email OTP
+export const verifyOtpService = async (
+  email: string,
+  otp: string,
+) => {
+  const normalizedEmail = normalizeEmail(email);
 
-  // get hashed otp from redis
-  const hashedOtp = await redisClient.get(otpKey);
-
-  if (!hashedOtp) {
-    throw new Error("OTP expired or not found");
+  if (!/^\d{6}$/.test(otp)) {
+    throw new AppError(
+      "OTP must contain exactly 6 digits",
+      400,
+    );
   }
 
-  // compare entered otp with hashed otp
-  const isOtpValid = await bcrypt.compare(otp, hashedOtp);
+  const user =
+    await findUserByEmail(normalizedEmail);
+
+  if (!user) {
+    throw new AppError(
+      "Invalid or expired verification code",
+      401,
+    );
+  }
+
+  if (user.isEmailVerified) {
+    if (user.status === "active") {
+      return null;
+    }
+
+    throw new AppError(
+      "This account is not active",
+      403,
+    );
+  }
+
+  if (
+    user.status !==
+    "pending_verification"
+  ) {
+    throw new AppError(
+      "This account cannot be verified",
+      403,
+    );
+  }
+
+  const otpKey =
+    `email-verification:otp:${normalizedEmail}`;
+
+  const attemptsKey =
+    `email-verification:attempts:${normalizedEmail}`;
+
+  const hashedOtp =
+    await redisClient.get(otpKey);
+
+  if (!hashedOtp) {
+    throw new AppError(
+      "OTP expired or not found",
+      401,
+    );
+  }
+
+  const currentAttemptsValue =
+    await redisClient.get(attemptsKey);
+
+  const currentAttempts = Number(
+    currentAttemptsValue ?? "0",
+  );
+
+  if (
+    currentAttempts >=
+    OTP_MAX_ATTEMPTS
+  ) {
+    await redisClient.del(otpKey);
+    await redisClient.del(attemptsKey);
+
+    throw new AppError(
+      "Too many wrong attempts. Please request a new OTP",
+      429,
+    );
+  }
+
+  const isOtpValid =
+    await bcrypt.compare(
+      otp,
+      hashedOtp,
+    );
 
   if (!isOtpValid) {
-    // increase wrong attempsts count
-    const attempts = await redisClient.incr(attemptsKey);
+    const attempts =
+      await redisClient.incr(
+        attemptsKey,
+      );
 
-    // keep the attemts key alive as long as the otp key is alive
-    await redisClient.expire(attemptsKey, 300);
+    /*
+     * Keep attempts alive for the same duration
+     * as the current OTP.
+     */
+    const otpTimeToLive =
+      await redisClient.ttl(otpKey);
 
-    if (attempts >= 5) {
-      // delete otp attempts after 5 wrong attempts
+    if (otpTimeToLive > 0) {
+      await redisClient.expire(
+        attemptsKey,
+        otpTimeToLive,
+      );
+    }
+
+    if (
+      attempts >=
+      OTP_MAX_ATTEMPTS
+    ) {
       await redisClient.del(otpKey);
       await redisClient.del(attemptsKey);
 
-      throw new Error("Too many wrong attempts. Please request a new OTP");
+      throw new AppError(
+        "Too many wrong attempts. Please request a new OTP",
+        429,
+      );
     }
 
-    throw new Error(`Invalid OTP. Attempts left: ${5 - attempts}`);
+    throw new AppError(
+      `Invalid OTP. Attempts left: ${
+        OTP_MAX_ATTEMPTS - attempts
+      }`,
+      401,
+    );
   }
 
-  // mark user email as verified in database
-  await User.findOneAndUpdate({ email }, { isEmailVerified: true });
+  const verifiedUser =
+    await markUserEmailAsVerified(
+      user._id.toString(),
+    );
 
-  // Remove OTP after successful verification
+  if (!verifiedUser) {
+    throw new AppError(
+      "The account could not be activated",
+      409,
+    );
+  }
+
   await redisClient.del(otpKey);
   await redisClient.del(attemptsKey);
 
   return null;
 };
 
-// forgotPasswordService
-export const forgotPasswordService = async (email: string) => {
-  // Check if user exists
-  const user = await User.findOne({ email });
+// Send password-reset OTP
+export const forgotPasswordService = async (
+  email: string,
+) => {
+  const normalizedEmail = normalizeEmail(email);
 
+  const user =
+    await findUserByEmail(normalizedEmail);
+
+  /*
+   * For stronger account-enumeration protection,
+   * this endpoint can return success even when the
+   * user does not exist.
+   */
   if (!user) {
-    throw new Error("User not found");
+    throw new AppError(
+      "User not found",
+      404,
+    );
   }
 
-  // Redis keys
-  const otpKey = `reset-password-otp:${email}`;
-  const cooldownKey = `reset-password-cooldown:${email}`;
+  if (
+    !user.isEmailVerified ||
+    user.status !== "active"
+  ) {
+    throw new AppError(
+      "This account is not active",
+      403,
+    );
+  }
 
-  // Prevent OTP spam
-  const cooldownExists = await redisClient.get(cooldownKey);
+  if (!user.password) {
+    throw new AppError(
+      "This account uses Google authentication",
+      400,
+    );
+  }
+
+  const otpKey =
+    `reset-password:otp:${normalizedEmail}`;
+
+  const cooldownKey =
+    `reset-password:cooldown:${normalizedEmail}`;
+
+  const attemptsKey =
+    `reset-password:attempts:${normalizedEmail}`;
+
+  const cooldownExists =
+    await redisClient.get(cooldownKey);
 
   if (cooldownExists) {
-    throw new Error("Please wait 60 seconds before requesting another OTP");
+    throw new AppError(
+      "Please wait 60 seconds before requesting another OTP",
+      429,
+    );
   }
 
-  // Generate secure OTP
   const otp = generateOtp();
 
-  // Hash OTP before storing
-  const hashedOtp = await bcrypt.hash(otp, 10);
+  const hashedOtp =
+    await bcrypt.hash(otp, 10);
 
-  // Store hashed OTP for 5 minutes
-  await redisClient.set(otpKey, hashedOtp, {
-    EX: 300,
-  });
+  await redisClient.del(attemptsKey);
 
-  // Store cooldown for 60 seconds
-  await redisClient.set(cooldownKey, "true", {
-    EX: 60,
-  });
-
-  // Create HTML email
-  const html = createResetPasswordEmailTemplate(otp);
-
-  // Send email
-  await sendEmail(
-    email,
-    "MeetFlow Password Reset OTP",
-    `Your MeetFlow password reset OTP is ${otp}. It is valid for 5 minutes.`,
-    html,
+  await redisClient.set(
+    otpKey,
+    hashedOtp,
+    {
+      EX: OTP_EXPIRY_SECONDS,
+    },
   );
+
+  await redisClient.set(
+    cooldownKey,
+    "true",
+    {
+      EX: OTP_COOLDOWN_SECONDS,
+    },
+  );
+
+  const html =
+    createResetPasswordEmailTemplate(
+      otp,
+    );
+
+  try {
+    await sendEmail(
+      normalizedEmail,
+      "MeetFlow Password Reset OTP",
+      `Your MeetFlow password reset OTP is ${otp}. It is valid for 5 minutes.`,
+      html,
+    );
+  } catch (error) {
+    await redisClient.del(otpKey);
+    await redisClient.del(attemptsKey);
+
+    throw error;
+  }
 
   return null;
 };
 
-
-// resetPasswordService
+// Reset password using the six-digit reset OTP
 export const resetPasswordService = async (
   email: string,
   otp: string,
-  newPassword: string
+  newPassword: string,
 ) => {
-  // Redis key where reset password OTP is stored
-  const otpKey = `reset-password-otp:${email}`;
+  const normalizedEmail = normalizeEmail(email);
 
-  // Get hashed OTP from Redis
-  const hashedOtp = await redisClient.get(otpKey);
+  if (!/^\d{6}$/.test(otp)) {
+    throw new AppError(
+      "OTP must contain exactly 6 digits",
+      400,
+    );
+  }
+
+  const user =
+    await findUserByEmail(normalizedEmail);
+
+  if (!user) {
+    throw new AppError(
+      "Invalid or expired OTP",
+      401,
+    );
+  }
+
+  if (
+    !user.isEmailVerified ||
+    user.status !== "active"
+  ) {
+    throw new AppError(
+      "This account is not active",
+      403,
+    );
+  }
+
+  const otpKey =
+    `reset-password:otp:${normalizedEmail}`;
+
+  const attemptsKey =
+    `reset-password:attempts:${normalizedEmail}`;
+
+  const hashedOtp =
+    await redisClient.get(otpKey);
 
   if (!hashedOtp) {
-    throw new Error("OTP expired or not found");
+    throw new AppError(
+      "OTP expired or not found",
+      401,
+    );
   }
 
-  // Compare entered OTP with hashed OTP
-  const isOtpValid = await bcrypt.compare(otp, hashedOtp);
+  const isOtpValid =
+    await bcrypt.compare(
+      otp,
+      hashedOtp,
+    );
 
   if (!isOtpValid) {
-    throw new Error("Invalid OTP");
+    const attempts =
+      await redisClient.incr(
+        attemptsKey,
+      );
+
+    const otpTimeToLive =
+      await redisClient.ttl(otpKey);
+
+    if (otpTimeToLive > 0) {
+      await redisClient.expire(
+        attemptsKey,
+        otpTimeToLive,
+      );
+    }
+
+    if (
+      attempts >=
+      OTP_MAX_ATTEMPTS
+    ) {
+      await redisClient.del(otpKey);
+      await redisClient.del(attemptsKey);
+
+      throw new AppError(
+        "Too many wrong attempts. Request a new password-reset OTP",
+        429,
+      );
+    }
+
+    throw new AppError(
+      `Invalid OTP. Attempts left: ${
+        OTP_MAX_ATTEMPTS - attempts
+      }`,
+      401,
+    );
   }
 
-  // Hash new password before storing
-  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  const hashedPassword =
+    await bcrypt.hash(
+      newPassword,
+      10,
+    );
 
-  // Update user password
-  await User.findOneAndUpdate(
-    { email },
-    { password: hashedPassword }
+  await updateUserPassword(
+    user._id.toString(),
+    hashedPassword,
   );
 
-  // Delete OTP after successful reset
+  /*
+   * Password reset invalidates existing sessions.
+   */
+  await Session.deleteMany({
+    userId: user._id,
+  });
+
   await redisClient.del(otpKey);
+  await redisClient.del(attemptsKey);
 
   return null;
 };
 
-
-
-
-// Handles Google sign-up and login
+// Google sign-up and login
 export const googleLoginService = async (
   credential: string,
   userAgent?: string,
-  ipAddress?: string
+  ipAddress?: string,
 ) => {
-  // Ask the Google provider to verify the credential
-  const googleUser = await verifyGoogleCredential(credential);
+  const googleUser =
+    await verifyGoogleCredential(
+      credential,
+    );
 
-  // Try to find an existing user with the same email
-  let user = await User.findOne({
-    email: googleUser.email,
-  });
+  const normalizedEmail =
+    normalizeEmail(googleUser.email);
 
-  // User does not exist, so create a Google account
+  let user =
+    await findUserByEmail(
+      normalizedEmail,
+    );
+
   if (!user) {
-    user = await User.create({
+    user = await createUser({
       name: googleUser.name,
-      email: googleUser.email,
+      email: normalizedEmail,
       avatar: googleUser.avatar,
       googleId: googleUser.googleId,
+
       authProvider: "google",
+      role: "user",
+
+      status: "active",
       isEmailVerified: true,
+      emailVerifiedAt: new Date(),
     });
-  }
+  } else {
+    if (user.status === "suspended") {
+      throw new AppError(
+        "This account has been suspended",
+        403,
+      );
+    }
 
-  // Existing local account with the same email
-  if (
-    user.authProvider === "local" &&
-    !user.googleId
-  ) {
-    // Link Google identity to the existing account
-    user.googleId = googleUser.googleId;
+    /*
+     * A successfully verified Google credential
+     * confirms ownership of the email address.
+     */
+    user.googleId =
+      googleUser.googleId;
 
-    // Keep local password login and also allow Google login
+    user.avatar =
+      googleUser.avatar ??
+      user.avatar;
+
+    user.isEmailVerified = true;
+    user.emailVerifiedAt ??=
+      new Date();
+
+    user.status = "active";
+
     await user.save();
   }
 
-  // Create the payload used inside MeetFlow JWTs
-  const tokenPayload = {
-    userId: user._id.toString(),
-    role: user.role,
-  };
+  const tokens =
+    await createAuthenticationSession(
+      user._id.toString(),
+      user.role,
+      userAgent,
+      ipAddress,
+    );
 
-  // Create MeetFlow tokens
-  const accessToken = generateAccessToken(tokenPayload);
-  const refreshToken = generateRefreshToken(tokenPayload);
-
-  // Session expires after 7 days
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7);
-
-  // Store this Google login as a device session
-  await Session.create({
-    userId: user._id,
-    refreshToken,
-    userAgent,
-    ipAddress,
-    expiresAt,
-  });
-
-  // Track the latest successful login
-  user.lastLoginAt = new Date();
-  await user.save();
+  await updateLastLoginAt(
+    user._id.toString(),
+  );
 
   return {
-    accessToken,
-    refreshToken,
+    ...tokens,
+
     user: {
-      id: user._id,
+      id: user._id.toString(),
       name: user.name,
       email: user.email,
       avatar: user.avatar,
       role: user.role,
-      isEmailVerified: user.isEmailVerified,
-      authProvider: user.authProvider,
+      status: user.status,
+      isEmailVerified:
+        user.isEmailVerified,
+      authProvider:
+        user.authProvider,
     },
   };
 };
