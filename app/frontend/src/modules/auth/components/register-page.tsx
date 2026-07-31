@@ -238,7 +238,7 @@ export function RegisterPage() {
               <Separator className="flex-1" />
             </div>
 
-            <SocialLogin disabled />
+            <SocialLogin mode="signup" />
           </CardContent>
 
           <CardFooter className="flex-col gap-4 border-t border-border/60 pt-6">

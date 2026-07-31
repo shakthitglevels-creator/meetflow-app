@@ -175,16 +175,7 @@ export function LoginPage() {
               <Separator className="flex-1" />
             </div>
 
-            <SocialLogin
-              disabled
-              onGoogleLogin={() => {
-                // Google authentication will be added later.
-              }}
-            />
-
-            <p className="mt-3 text-center text-xs text-muted-foreground">
-              Google authentication will be available shortly.
-            </p>
+          <SocialLogin mode="signin" />
           </CardContent>
 
           <CardFooter className="flex-col gap-4 border-t border-border/60 pt-6">
