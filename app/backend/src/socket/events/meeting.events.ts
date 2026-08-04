@@ -10,5 +10,10 @@ export const SOCKET_EVENTS = {
   PRESENCE_JOINED: "meeting:presence-joined",
   PRESENCE_LEFT: "meeting:presence-left",
 
+  PARTICIPANTS_UPDATED:
+  "meeting:participants-updated",
+
+
+
   ERROR: "meeting:error",
 } as const;

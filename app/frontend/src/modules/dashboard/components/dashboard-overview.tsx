@@ -19,30 +19,37 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/modules/auth/store/auth.store";
-
+import { DashboardMeetingActions } from "@/modules/meetings/components/dashboard-meeting-actions";
 const statistics = [
   {
     label: "Total meetings",
     value: "0",
     icon: Video,
+    iconClassName:
+      "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400",
   },
   {
     label: "Upcoming",
     value: "0",
     icon: Calendar,
+    iconClassName:
+      "bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400",
   },
   {
     label: "Participants",
     value: "0",
     icon: Users,
+    iconClassName:
+      "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400",
   },
   {
     label: "Meeting hours",
     value: "0h",
     icon: Clock3,
+    iconClassName:
+      "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400",
   },
 ];
-
 export function DashboardOverview() {
   const user = useAuthStore(
     (state) => state.user
@@ -79,7 +86,7 @@ export function DashboardOverview() {
         </Button>
       </section>
 
-      <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
         {statistics.map((statistic) => {
           const Icon = statistic.icon;
 
@@ -117,32 +124,8 @@ export function DashboardOverview() {
           </CardHeader>
 
           <CardContent className="space-y-5">
-            <Button
-              type="button"
-              className="h-12 w-full justify-between px-5"
-            >
-              <span className="flex items-center gap-3">
-                <Video className="size-5" />
-                Start an instant meeting
-              </span>
-
-              <ArrowRight className="size-4" />
-            </Button>
-
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Input
-                placeholder="Enter meeting code"
-                className="h-11"
-              />
-
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 sm:px-6"
-              >
-                Join meeting
-              </Button>
-            </div>
+          
+            <DashboardMeetingActions />
           </CardContent>
         </Card>
 
