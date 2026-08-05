@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useSocketConnection } from "../hooks/use-socket-connection";
 
+
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -27,10 +28,14 @@ import { Spinner } from "@/components/ui/spinner";
 import { useLocalMedia } from "../hooks/use-local-media";
 import { LocalVideo } from "./local-video";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {socket} from "@/lib/socket";
 
 import { useRoomParticipants } from "../hooks/use-room-participants";
+
+import { usePeerConnection }
+from "../hooks/use-peer-connection";
+
 
 type MeetingRoomPageProps = {
   meetingCode: string;
@@ -46,11 +51,29 @@ export function MeetingRoomPage({
   participants,
 } = useRoomParticipants();
 
+
+const offerCreatedRef =
+  useRef(false);
+
+
+
+useEffect(() => {
+  (window as any).participants =
+    participants;
+}, [participants]);
+
   const {
     stream,
     loading,
     error,
   } = useLocalMedia();
+
+  const {
+  peerConnection,
+  createOffer,
+} = usePeerConnection(
+  stream,
+);
 
   const [isMicrophoneEnabled, setIsMicrophoneEnabled] =
     useState(true);
@@ -133,6 +156,45 @@ useEffect(() => {
     );
   };
 }, []);
+
+useEffect(() => {
+  if (
+    participants.length !== 2
+  ) {
+    return;
+  }
+
+  if (
+    offerCreatedRef.current
+  ) {
+    return;
+  }
+
+  const sortedParticipants =
+    [...participants].sort(
+      (a, b) =>
+        a.socketId.localeCompare(
+          b.socketId,
+        ),
+    );
+
+  const caller =
+    sortedParticipants[0];
+
+  if (
+    caller.socketId ===
+    socket.id
+  ) {
+    offerCreatedRef.current =
+      true;
+
+    console.log(
+      "I am caller",
+    );
+
+    createOffer();
+  }
+}, [participants]);
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-8rem)] max-w-7xl flex-col gap-5">

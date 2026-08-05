@@ -3,14 +3,10 @@ import { SOCKET_EVENTS } from "../events/meeting.events";
 import { joinMeetingRoomService } from "../../modules/meetings/services/meeting.service";
 import { roomStore } from "../store/room.store";
 
-
 export const registerMeetingHandlers = (io: Server, socket: Socket) => {
   // Join a Socket.IO meeting room
   socket.on(SOCKET_EVENTS.MEETING_JOIN_ROOM, async (meetingCode: string) => {
-    console.log(
-      "JOIN ROOM EVENT RECEIVED",
-      meetingCode
-    );
+    console.log("JOIN ROOM EVENT RECEIVED", meetingCode);
 
     try {
       const userId = socket.data.user.userId;
@@ -71,16 +67,9 @@ export const registerMeetingHandlers = (io: Server, socket: Socket) => {
       // Remove this connection from the in-memory room
       await socket.leave(meetingCode);
 
-      const participants =
-  roomStore.removeParticipant(
-    meetingCode,
-    socket.id
-  );
+      const participants = roomStore.removeParticipant(meetingCode, socket.id);
 
-io.to(meetingCode).emit(
-  SOCKET_EVENTS.PARTICIPANTS_UPDATED,
-  participants
-);
+      io.to(meetingCode).emit(SOCKET_EVENTS.PARTICIPANTS_UPDATED, participants);
 
       // Confirm only to the leaving browser
       socket.emit(SOCKET_EVENTS.MEETING_LEFT_ROOM, {
@@ -97,4 +86,41 @@ io.to(meetingCode).emit(
       });
     }
   });
-}
+
+socket.on(
+  SOCKET_EVENTS.WEBRTC_OFFER,
+  ({ targetSocketId, offer }) => {
+    console.log(
+      "FORWARDING OFFER",
+      socket.id,
+      "->",
+      targetSocketId,
+    );
+
+    io.to(targetSocketId).emit(
+      SOCKET_EVENTS.WEBRTC_OFFER,
+      {
+        senderSocketId: socket.id,
+        offer,
+      },
+    );
+  },
+);
+
+  socket.on(SOCKET_EVENTS.WEBRTC_ANSWER, ({ targetSocketId, answer }) => {
+    io.to(targetSocketId).emit(SOCKET_EVENTS.WEBRTC_ANSWER, {
+      senderSocketId: socket.id,
+      answer,
+    });
+  });
+
+  socket.on(
+    SOCKET_EVENTS.WEBRTC_ICE_CANDIDATE,
+    ({ targetSocketId, candidate }) => {
+      io.to(targetSocketId).emit(SOCKET_EVENTS.WEBRTC_ICE_CANDIDATE, {
+        senderSocketId: socket.id,
+        candidate,
+      });
+    },
+  );
+};

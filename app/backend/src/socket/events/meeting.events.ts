@@ -10,10 +10,15 @@ export const SOCKET_EVENTS = {
   PRESENCE_JOINED: "meeting:presence-joined",
   PRESENCE_LEFT: "meeting:presence-left",
 
-  PARTICIPANTS_UPDATED:
-  "meeting:participants-updated",
+  PARTICIPANTS_UPDATED: "meeting:participants-updated",
 
+  WEBRTC_OFFER: "webrtc:offer",
 
+  WEBRTC_ANSWER: "webrtc:answer",
+
+  WEBRTC_ICE_CANDIDATE: "webrtc:ice-candidate",
+
+  
 
   ERROR: "meeting:error",
 } as const;
