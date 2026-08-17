@@ -13,6 +13,7 @@ import {
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useSocketConnection } from "../hooks/use-socket-connection";
+import {RemoteVideo} from "./remote-video";
 
 
 import { Button } from "@/components/ui/button";
@@ -70,6 +71,7 @@ useEffect(() => {
 
   const {
   peerConnection,
+  remoteStream,
   createOffer,
 } = usePeerConnection(
   stream,
@@ -257,9 +259,20 @@ useEffect(() => {
                 </div>
               ) : stream &&
                 isCameraEnabled ? (
-                <LocalVideo
-                  stream={stream}
-                />
+                <>
+                  <LocalVideo
+                    stream={stream}
+                  />
+                  {remoteStream && (
+                    <div className="absolute top-4 right-4 h-40 w-60 overflow-hidden rounded-lg border">
+                      <RemoteVideo
+                        stream={
+                          remoteStream
+                        }
+                      />
+                    </div>
+                  )}
+                </>
               ) : (
                 <div className="flex flex-col items-center gap-4 text-center text-white">
                   <span className="flex size-20 items-center justify-center rounded-full bg-white/10">

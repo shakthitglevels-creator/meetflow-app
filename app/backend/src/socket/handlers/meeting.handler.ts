@@ -107,12 +107,31 @@ socket.on(
   },
 );
 
-  socket.on(SOCKET_EVENTS.WEBRTC_ANSWER, ({ targetSocketId, answer }) => {
-    io.to(targetSocketId).emit(SOCKET_EVENTS.WEBRTC_ANSWER, {
-      senderSocketId: socket.id,
-      answer,
-    });
-  });
+socket.on(
+  SOCKET_EVENTS.WEBRTC_ANSWER,
+  ({
+    targetSocketId,
+    answer,
+  }) => {
+    console.log(
+      "FORWARDING ANSWER",
+      socket.id,
+      "->",
+      targetSocketId,
+    );
+
+    io.to(
+      targetSocketId,
+    ).emit(
+      SOCKET_EVENTS.WEBRTC_ANSWER,
+      {
+        senderSocketId:
+          socket.id,
+        answer,
+      },
+    );
+  },
+);
 
   socket.on(
     SOCKET_EVENTS.WEBRTC_ICE_CANDIDATE,
